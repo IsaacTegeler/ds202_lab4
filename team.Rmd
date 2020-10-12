@@ -1,0 +1,179 @@
+---
+title: "Lab 4 team report"
+author: "Isaac Tegeler"
+date: "10/6/2020"
+output: html_document
+---
+
+
+## Load Data
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+defense <- read_excel('cyclonesFootball2019.xlsx', sheet='Defensive')
+offense <- read_excel('cyclonesFootball2019.xlsx', sheet='Offensive')
+biography <- read_excel('cyclonesFootball2019.xlsx', sheet='Biography')
+```
+# Part 1 Data Cleaning
+## 1.1 Names as factors:
+```{r}
+defense$Name <- factor(defense$Name)
+defense$Opponent_Opponent <-factor(defense$Opponent_Opponent)
+
+offense$Name <- factor(offense$Name)
+offense$Opponent_Opponent <-factor(offense$Opponent_Opponent)
+
+biography$Name <- factor(biography$Name)
+```
+    
+## 1.2 Convert stats to numeric type:
+```{r}
+offClean <- offense %>%
+  separate(`Passing_CMP-ATT`, c("CMP", "ATT"), "-\\s+") %>%
+  mutate(across(!Name & !Opponent_Opponent, as.numeric))
+
+defClean <- defense %>%
+  mutate_if(is.character , as.numeric)
+```
+    
+## 1.3 Convert Height to inches
+```{r}
+bioClean <- biography %>%
+  separate(Height, c("feet", "inches"), sep="-", convert=TRUE) %>%
+  mutate(Height = (feet *12) + inches) %>%
+  select(-feet, -inches)
+```
+## Part 1 results
+```{r}
+str(offClean)
+str(defClean)
+str(bioClean)
+```
+
+
+# Part 2 Tidying
+## 2.1 Stat Column
+```{r}
+defStats <- defClean %>% pivot_longer(tail(colnames(defClean), 9), names_to="stat", values_to="count")
+```
+
+## 2.2 Rare Defesive Stats
+```{r}
+ggplot(defStats, aes(x = stat, y = count)) + geom_bar(stat="identity") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+The rarest skills for defense is turnovers.
+
+## 2.3 Iowa State defense Vs. Iowa and Notre Dame
+
+```{r}
+x <- defStats %>%
+  filter(stat=="Tackles_Solo") %>%
+  filter(Opponent_Opponent == "Iowa" | Opponent_Opponent == "Notre Dame") %>%
+  pivot_wider(names_from=Opponent_Opponent, values_from=count)
+
+
+ggplot(x, aes(x=Iowa, y=`Notre Dame`)) + geom_point()
+```
+
+The plot shows that there are a lot more solo tackles for the players durring the Notre Dame game than the Iowa game. This idindcates the defense palyed better against Notre Dame.
+
+## 2.4 City and State
+```{r}
+bioClean <- bioClean %>%
+  separate(Hometown, c("City", "State"), sep=", ")
+
+head(bioClean%>%select(City, State), 10)
+```
+
+## 2.5 Players by state
+```{r}
+ct <- bioClean %>%
+  group_by(State) %>%
+  summarise(players = n())
+
+ct
+```
+
+# Part 3
+
+## 3.1 players by state
+
+```{r}
+offenseStates <- offClean %>%
+  select(Name) %>%
+  inner_join(bioClean%>%select(Name, State), by="Name") %>%
+  distinct()
+
+deffenseStates <- defClean %>%
+  select(Name) %>%
+  inner_join(bioClean%>%select(Name, State), by="Name") %>%
+  distinct()
+
+offenseStates
+deffenseStates
+```
+
+## 3.2 Brock Purdy vs ISU
+```{r}
+
+yearSum <- offClean %>%
+  group_by(Name) %>%
+  summarise_if(is.numeric, sum, na.rm = TRUE)
+
+yearSum[is.na(yearSum)] <- 0
+yatt <- yearSum %>%
+  mutate(attempts = Rushing_ATT + Receiving_REC + ATT) %>%
+  mutate(yards = Rushing_YDS *2 + Receiving_YDS + Passing_YDS) %>%
+  mutate(ydsatt = yards/attempts)
+
+result <- yatt %>% select(Name, ydsatt) %>% arrange(desc(ydsatt))
+result
+```
+Based on the number of yards per touch the players on the team that the best are Milton and Shawn, while Purdy is nearly the worst.
+
+
+## 3.3 2018 vs 2019
+
+```{r}
+defense18 <- read_excel('cyclonesFootball2018.xlsx', sheet='Defensive')
+offense18 <- read_excel('cyclonesFootball2018.xlsx', sheet='Offensive')
+
+defense18$Name <- factor(defense18$Name)
+defense18$Opponent_Opponent <-factor(defense18$Opponent_Opponent)
+
+offense18$Name <- factor(offense18$Name)
+offense18$Opponent_Opponent <-factor(offense18$Opponent_Opponent)
+
+offClean18 <- offense18 %>%
+  separate(`Passing_CMP-ATT`, c("CMP", "ATT"), "-\\s+") %>%
+  mutate(across(!Name & !Opponent_Opponent, as.numeric))
+
+defClean18 <- defense18 %>%
+  mutate_if(is.character , as.numeric)
+
+yearSum18 <- offClean18 %>%
+  group_by(Name) %>%
+  summarise_if(is.numeric, sum, na.rm = TRUE)
+
+yearSum18[is.na(yearSum18)] <- 0
+yatt18 <- yearSum18 %>%
+  mutate(attempts = Rushing_ATT + Receiving_REC + ATT) %>%
+  mutate(yards = Rushing_YDS *2 + Receiving_YDS + Passing_YDS) %>%
+  mutate(ydsatt = yards/attempts)
+
+
+result_18 <- yatt18 %>% select(Name, ydsatt) %>% arrange(desc(ydsatt))
+result_18
+
+m <- full_join(result_18, result, by="Name", suffix=c("_18", "_19")) %>%
+  mutate(diff = ydsatt_19-ydsatt_18) %>%
+  na.omit() %>%
+  select(Name, diff) %>%
+  arrange(desc(diff))
+m
+```
+
+The players that did not play both years were ommitted. The player that had the most improvement was MIlton and Nwangwu. While Purdy and Akers regressed from the previous season.
